@@ -1,0 +1,62 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: watch-endpoints-role
+  namespace: otel
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: watch-endpoints-rolebinding
+  namespace: otel
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector-lb
+    namespace: otel
+roleRef:
+  kind: Role
+  name: watch-endpoints-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otelcol-watch-nodes-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "nodes"]
+    verbs: ["get", "watch", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otelcol-watch-nodes-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector-lb
+    namespace: otel
+roleRef:
+  kind: ClusterRole
+  name: otelcol-watch-nodes-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otelcol-ds-watch-nodes-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector-daemonset
+    namespace: otel
+roleRef:
+  kind: ClusterRole
+  name: otelcol-watch-nodes-role
+  apiGroup: rbac.authorization.k8s.io

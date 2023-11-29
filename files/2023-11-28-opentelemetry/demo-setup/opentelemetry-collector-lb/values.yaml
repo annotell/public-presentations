@@ -1,0 +1,219 @@
+mode: "deployment"
+fullnameOverride: otel-collector-lb
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 512Mi
+
+image:
+  # See releases here (remove 'v' prefix): https://github.com/open-telemetry/opentelemetry-collector-contrib/releases
+  tag: "0.89.0"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+config:
+  extensions:
+    memory_ballast:
+      size_mib: 200
+      # size_in_percentage: 40
+
+  exporters:
+
+    # Define otel-collector hostnames statically, so the telemetry's routing_key
+    # ALWAYS leads to the same instance, even when an otel-collector is not READY.
+    # This avoids annoying issues where metrics for the same labelset are emitted
+    # from multiple collectors, especially after they restart.
+    # While a collector is not accepting telemetry, this instance will queue up to
+    # 1000 batches in-memory.
+    loadbalancing/by-traceid:
+      routing_key: "traceID"
+      protocol:
+        otlp:
+          tls:
+            insecure: true
+      resolver:
+        static:
+          hostnames:
+            - otel-collector-0.otel-collector.otel.svc.cluster.local:4316
+            - otel-collector-1.otel-collector.otel.svc.cluster.local:4316
+    loadbalancing/by-service-name:
+      routing_key: "service"
+      protocol:
+        otlp:
+          tls:
+            insecure: true
+      resolver:
+        static:
+          hostnames:
+            - otel-collector-0.otel-collector.otel.svc.cluster.local:4317
+            - otel-collector-1.otel-collector.otel.svc.cluster.local:4317
+
+  processors:
+    memory_limiter:
+      check_interval: 5s
+      # limit_percentage: 80
+      # spike_limit_percentage: 25
+      limit_mib: 512
+      spike_limit_mib: 100
+
+    filter/exclude-kube-probe-spans:
+      error_mode: ignore
+      traces:
+        span:
+          - 'IsMatch(attributes["user_agent.original"], "^kube-probe.*$")'
+
+    k8sattributes:
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.deployment.name
+          - k8s.statefulset.name
+          - k8s.daemonset.name
+          - k8s.cronjob.name
+          - k8s.job.name
+          - k8s.node.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.container.name
+          - container.id
+          - container.image.name
+          - container.image.tag
+        labels:
+          - { tag_name: team, key: team, from: pod }
+          - { tag_name: app, key: app, from: pod }
+          - { tag_name: node.type, key: "node.kubernetes.io/instance-type", from: node }
+          - { tag_name: zone, key: "topology.kubernetes.io/zone", from: node }
+          - { tag_name: node.provisioning, key: "cloud.google.com/gke-provisioning", from: node }
+    resource:
+      attributes:
+        - { action: insert, key: service.version, from_attribute: container.image.tag }
+        - { action: insert, key: namespace, from_attribute: k8s.namespace.name }
+        - { action: insert, key: deployment, from_attribute: k8s.deployment.name }
+        - { action: insert, key: container, from_attribute: k8s.container.name }
+        - { action: insert, key: node, from_attribute: k8s.node.name }
+        - { action: insert, key: statefulset, from_attribute: k8s.statefulset.name }
+        - { action: insert, key: daemonset, from_attribute: k8s.daemonset.name }
+        - { action: insert, key: cronjob, from_attribute: k8s.cronjob.name }
+        - { action: insert, key: job, from_attribute: k8s.job.name }
+        - { action: insert, key: pod, from_attribute: k8s.pod.name }
+        - { action: insert, key: pod.ip, from_attribute: k8s.pod.ip }
+        - { action: insert, key: uid, from_attribute: k8s.pod.uid }
+        - { action: delete, pattern: ^k8s.* }
+    transform:
+      metric_statements:
+        - context: resource
+          statements:
+            - set(attributes["service.name"], Concat([attributes["namespace"], attributes["app"]], "/")) where attributes["service.name"] == "namespace/app"
+            - set(attributes["service.instance.id"], Concat([attributes["pod.ip"], attributes["container"]], ":")) where attributes["service.instance.id"] == "pod_ip:container"
+      trace_statements:
+        - context: span
+          statements:
+            # For HTTP clients (where 'http.method' is present), change span name from '{method}' to '{method} {net.peer.name}'
+            - set(name, Concat([name, attributes["net.peer.name"]], " ")) where attributes["http.method"] != nil and attributes["net.peer.name"] != nil
+            # If span status=error, set 'error.type' to one of the likely (but low-cardinality) descriptions of the error. This is a new [attribute](https://github.com/open-telemetry/semantic-conventions/blob/v1.23.1/docs/http/http-spans.md#common-attributes)
+            # that will be set by instrumentation libraries in future, but for now we'll do it ourselves to the same spec.
+            - set(attributes["error.type"], attributes["http.status_code"]) where status.code == 2 and attributes["error.type"] == nil
+            - set(attributes["error.type"], attributes["messaging.pubsub.ack_result"]) where status.code == 2 and attributes["error.type"] == nil
+        - context: spanevent
+          statements:
+            # As above, but for span events representing exceptions. NB this will only use the first exception if there
+            # are multiple.
+            - set(span.attributes["error.type"], attributes["exception.type"]) where span.status.code == 2 and attributes["error.type"] == nil
+        - context: span
+          statements:
+            # Finally, for a span with status=error use 'unknown error' for 'error.type' is not set above
+            - set(attributes["error.type"], "unknown error") where status.code == 2 and attributes["error.type"] == nil
+        - context: resource
+          statements:
+            - set(attributes["service.name"], Concat([attributes["namespace"], attributes["app"]], "/")) where attributes["service.name"] == "namespace/app"
+            - set(attributes["service.instance.id"], Concat([attributes["pod.ip"], attributes["container"]], ":")) where attributes["service.instance.id"] == "pod_ip:container"
+
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    otlp:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+        http:
+          endpoint: ${env:MY_POD_IP}:4318
+  service:
+    pipelines:
+      logs: null # Logs are instead collected by the opentelemetry-collector-daemonset
+      metrics: null
+      traces: null
+
+      metrics/to-otel-collector:
+        receivers:
+          - otlp
+        processors:
+          - memory_limiter
+          - k8sattributes
+          - resource
+          - transform
+          - batch
+        exporters:
+          - loadbalancing/by-service-name
+
+      traces/to-otel-collector:
+        receivers:
+          - otlp
+        processors:
+          - memory_limiter
+          - filter/exclude-kube-probe-spans
+          - k8sattributes
+          - resource
+          - transform
+          - batch
+        exporters:
+          - loadbalancing/by-traceid
+          - loadbalancing/by-service-name
+
+presets:
+  kubernetesAttributes:
+    enabled: true
+  logsCollection:
+    enabled: false
+  hostMetrics:
+    enabled: false
+  kubernetesEvents:
+    enabled: false
+  clusterMetrics:
+    enabled: false
+  kubeletMetrics:
+    enabled: false
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - opentelemetry-collector-lb
+          topologyKey: topology.kubernetes.io/zone
+        weight: 100
+
+priorityClassName: <CHOOSE_PRIORITY>
+
+
+prometheusRule:
+  enabled: true
+  defaultRules:
+    enabled: true
+
+serviceMonitor:
+  enabled: true
+
+ports:
+  metrics:
+    enabled: true

@@ -1,0 +1,688 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Drilldown into otel traces",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "gnetId": 18812,
+  "graphTooltip": 0,
+  "id": 300,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "info",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Semantic Conventions: 1.20.0",
+      "tooltip": "",
+      "type": "link",
+      "url": "https://github.com/open-telemetry/semantic-conventions/blob/main/schemas/1.20.0"
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
+      },
+      "description": "",
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 66,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "This dashboard helps you understand why specific requests went wrong.\n1. Select some filters above (if not already set)\n2. Click on a TraceId in the table below\n3. See the Trace appear below that\n4. Logs linked to that Trace appear at the bottom.\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "10.2.2",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 65,
+      "panels": [],
+      "title": "Traces",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "${traces}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "links": [],
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Show trace below",
+                    "url": "/d/${__dashboard.uid}﻿/${__dashboard}?orgId=1&${environment:queryparam}﻿&${app:queryparam}&${namespace:queryparam}&${team:queryparam}&${span_name:queryparam}&${span_kind:queryparam}&${error_type:queryparam}&${status_code:queryparam}&${kind:queryparam}&${status:queryparam}&var-traceId=﻿${__data.fields[\"traceID\"]}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 76
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 54,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "10.2.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "${traces}"
+          },
+          "limit": 20,
+          "query": "{resource.app=~\"$app\" && resource.team=~\"$team\" && resource.namespace=~\"$namespace\" && name=~\"$span_name\" && (${status:pipe}|false) && (${kind:pipe}|false) && (span.error.type=~\"$error_type\" || status!=error)} ",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Error traces",
+      "transformations": [],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "${traces}"
+      },
+      "gridPos": {
+        "h": 17,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 55,
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "${traces}"
+          },
+          "limit": 20,
+          "query": "${traceId}",
+          "queryType": "traceql",
+          "refId": "A"
+        }
+      ],
+      "title": "Selected Trace",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 64,
+      "panels": [],
+      "title": "Logs",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${logs}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "id": 53,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${logs}"
+          },
+          "editorMode": "code",
+          "expr": "{app=~\"$app\", namespace=~\"$namespace\"} | json | line_format `{{.body}}` | json | trace_id=\"$traceId\" | line_format \"[{{.level}}] {{.message}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "staging",
+          "value": "staging"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Environment",
+        "multi": false,
+        "name": "environment",
+        "options": [
+          {
+            "selected": true,
+            "text": "staging",
+            "value": "staging"
+          },
+          {
+            "selected": false,
+            "text": "prod",
+            "value": "prod"
+          }
+        ],
+        "query": "staging, prod",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "mimir-staging",
+          "value": "mimir-staging"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "label": "Metrics",
+        "multi": false,
+        "name": "metrics",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "mimir-$environment",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "tempo-staging",
+          "value": "tempo-staging"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "label": "Traces",
+        "multi": false,
+        "name": "traces",
+        "options": [],
+        "query": "tempo",
+        "refresh": 1,
+        "regex": "tempo-$environment",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "loki-staging",
+          "value": "loki-staging"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "label": "Logs",
+        "multi": false,
+        "name": "logs",
+        "options": [],
+        "query": "loki",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "loki-$environment",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(target_info,namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Namespace",
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": {
+          "query": "label_values(target_info,namespace)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(target_info{namespace=~\"$namespace\"},team)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Team",
+        "multi": false,
+        "name": "team",
+        "options": [],
+        "query": {
+          "query": "label_values(target_info{namespace=~\"$namespace\"},team)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(target_info{namespace=~\"$namespace\", team=~\"$team\"},app)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "App",
+        "multi": true,
+        "name": "app",
+        "options": [],
+        "query": {
+          "query": "label_values(target_info{namespace=~\"$namespace\", team=~\"$team\"},app)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},span_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Span Name",
+        "multi": true,
+        "name": "span_name",
+        "options": [],
+        "query": {
+          "query": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},span_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": [
+            "SPAN_KIND_CONSUMER"
+          ],
+          "value": [
+            "SPAN_KIND_CONSUMER"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},span_kind)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Span Kind",
+        "multi": true,
+        "name": "span_kind",
+        "options": [],
+        "query": {
+          "query": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},span_kind)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},error_type)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Error Type",
+        "multi": true,
+        "name": "error_type",
+        "options": [],
+        "query": {
+          "query": "label_values(traces_spanmetrics_calls{namespace=~\"$namespace\", team=~\"$team\", app=~\"$app\"},error_type)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "tagValuesQuery": "",
+        "tagsQuery": "",
+        "type": "query",
+        "useTags": false
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "Ok",
+          "value": "STATUS_CODE_OK"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Span Status",
+        "multi": true,
+        "name": "status_code",
+        "options": [
+          {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "Error",
+            "value": "STATUS_CODE_ERROR"
+          },
+          {
+            "selected": false,
+            "text": "Unset",
+            "value": "STATUS_CODE_UNSET"
+          },
+          {
+            "selected": true,
+            "text": "Ok",
+            "value": "STATUS_CODE_OK"
+          }
+        ],
+        "query": "Error : STATUS_CODE_ERROR , Unset : STATUS_CODE_UNSET , Ok : STATUS_CODE_OK",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "d895e273040d5dead5fa1e19a8c748",
+          "value": "d895e273040d5dead5fa1e19a8c748"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "traceId",
+        "options": [],
+        "query": "",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "query_result('STATUS_CODE_ERROR=\"status=error|\", STATUS_CODE_UNSET=\"status=unset|\", STATUS_CODE_OK=\"status=ok|\"')",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "status",
+        "options": [],
+        "query": {
+          "query": "query_result('STATUS_CODE_ERROR=\"status=error|\", STATUS_CODE_UNSET=\"status=unset|\", STATUS_CODE_OK=\"status=ok|\"')",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/(?:${status_code:pipe})=\"?(.*?)\"/g",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "allValue": "",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${metrics}"
+        },
+        "definition": "query_result('SPAN_KIND_SERVER=\"kind=server|\",SPAN_KIND_CLIENT=\"kind=client|\", SPAN_KIND_INTERNAL=\"kind=internal|\",SPAN_KIND_CONSUMER=\"kind=consumer|\",SPAN_KIND_PUBLISHER=\"kind=publisher|\"')",
+        "hide": 2,
+        "includeAll": true,
+        "multi": true,
+        "name": "kind",
+        "options": [],
+        "query": {
+          "query": "query_result('SPAN_KIND_SERVER=\"kind=server|\",SPAN_KIND_CLIENT=\"kind=client|\", SPAN_KIND_INTERNAL=\"kind=internal|\",SPAN_KIND_CONSUMER=\"kind=consumer|\",SPAN_KIND_PUBLISHER=\"kind=publisher|\"')",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "/(?:${span_kind:pipe})=\"?(.*?)\"/g",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
+  },
+  "timezone": "",
+  "title": "Opentelemetry Traces Drilldown",
+  "uid": "e3372b82-7306-41f9-832d-f95d94c59c23",
+  "version": 1,
+  "weekStart": ""
+}

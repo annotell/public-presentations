@@ -1,0 +1,32 @@
+
+## Admission webhooks make sure only requests with correctly formatted rules will get into the Operator.
+## They also enable the sidecar injection for OpenTelemetryCollector and Instrumentation CR's
+admissionWebhooks:
+  ## Defines the sidecar injection logic in Pods.
+  ## - Ignore, the injection is fail-open. The pod will be created, but the sidecar won't be injected.
+  ## - Fail, the injection is fail-close. If the webhook pod is not ready, pods cannot be created.
+  pods:
+    failurePolicy: Ignore
+
+  certManager:
+    enabled: true
+    issuerRef:
+      kind: ClusterIssuer
+      name: selfsigning
+
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-node-lease
+
+manager:
+  serviceMonitor:
+    enabled: true
+
+  prometheusRule:
+    enabled: true
+    defaultRules:
+      enabled: true

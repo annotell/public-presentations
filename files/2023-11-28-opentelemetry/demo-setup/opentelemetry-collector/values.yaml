@@ -1,0 +1,303 @@
+mode: "statefulset"
+fullnameOverride: otel-collector
+
+replicaCount: 2
+resources:
+  requests:
+    cpu: 50m
+    memory: 512Mi
+
+image:
+  # See releases here (remove 'v' prefix): https://github.com/open-telemetry/opentelemetry-collector-contrib/releases
+  tag: "0.89.0"
+
+config:
+  extensions:
+    memory_ballast:
+      size_mib: 200
+      # size_in_percentage: 40
+    file_storage:
+      directory: /pvc
+      timeout: 10s
+      compaction:
+        on_start: false
+        on_rebound: false
+        directory: /pvc
+        rebound_needed_threshold_mib: 512
+        rebound_trigger_threshold_mib: 256
+        max_transaction_size: 65_536
+
+  exporters:
+    logging: null
+    otlphttp/tempo:
+      endpoint: <TEMPO_OTLPHTTP_ENDPOINT>
+      sending_queue:
+        storage: file_storage
+        num_consumers: 10
+        queue_size: 1000
+      headers:
+        "X-Scope-OrgID": <TENANT>
+    otlphttp/mimir:
+      endpoint: <MIMIR_OTLPHTTP_ENDPOINT>
+      sending_queue:
+        storage: file_storage
+        num_consumers: 10
+        queue_size: 1000
+      headers:
+        "X-Scope-OrgID": <TENANT>
+
+  processors:
+    memory_limiter:
+      check_interval: 5s
+      # limit_percentage: 80
+      # spike_limit_percentage: 25
+      limit_mib: 512
+      spike_limit_mib: 100
+
+    groupbytrace:
+      wait_duration: 30s
+
+    attributes/collector_info:
+      actions:
+        - key: collector.hostname
+          value: $HOSTNAME
+          action: upsert
+
+    transform:
+      metric_statements:
+        - context: datapoint
+          # This determines which resource attributes should be labels in metrics
+          statements:
+            - set(attributes["namespace"], resource.attributes["namespace"])
+            - set(attributes["deployment"], resource.attributes["deployment"])
+            - set(attributes["statefulset"], resource.attributes["statefulset"])
+            - set(attributes["daemonset"], resource.attributes["daemonset"])
+            - set(attributes["cronjob"], resource.attributes["cronjob"])
+            - set(attributes["pod"], resource.attributes["pod"])
+            - set(attributes["team"], resource.attributes["team"])
+            - set(attributes["app"], resource.attributes["app"])
+
+    tail_sampling/tempo_filter:
+      # We use the groupbytrace processor first, so traces are already complete. No need
+      # to wait for more spans to arrive.
+      decision_wait: 0s
+      policies: [
+        {
+          # Rule 1: 100% for all routes (to be reduced if we need to)
+          name: probabilistic-policy,
+          type: probabilistic,
+          probabilistic: { sampling_percentage: 100 },
+        },
+        {
+          # Rule 2: always sample if there is an error
+          name: trace-status-policy,
+          type: status_code,
+          status_code: { status_codes: [ ERROR ] },
+        },
+        {
+          # Rule 3: always sample if the force_sample attribute is set to true
+          name: force-sample,
+          type: boolean_attribute,
+          boolean_attribute: { key: force_sample, value: true },
+        },
+      ]
+
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+    otlp: null
+
+    otlp/by-traceid:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4316
+    otlp/by-service-name:
+      protocols:
+        grpc:
+          endpoint: ${env:MY_POD_IP}:4317
+  connectors:
+    forward/complete_traces:
+
+    servicegraph:
+      store: # Configuration for the in-memory store
+        ttl: 2s # Value to wait for an edge to be completed
+        max_items: 2000 # Amount of edges that will be stored in the storeMap
+      dimensions:
+        - namespace
+        - app
+        - team
+
+    # This spanmetrics connector is for all traces, even those that will not be sent to Tempo.
+    # Pro: These metrics will be representative of real traffic.
+    # Con: We cannot have exemplars (since most of the traces will never make it to Tempo)
+    spanmetrics:
+      namespace: traces.spanmetrics
+      dimensions:
+        - name: app
+        - name: team
+        - name: namespace
+        - name: error.type
+      histogram:
+        unit: s
+      events:
+        enabled: true
+        dimensions:
+          - name: exception.type
+
+  service:
+    extensions:
+      - health_check
+      - memory_ballast
+      - file_storage
+
+    pipelines:
+      logs: null # Logs are instead collected by the opentelemetry-collector-daemonset
+      traces: null
+      metrics: null
+
+      # Spans from the same traceID are guaranteed to arrive to the same instance, so
+      # here we just need to group the spans by traceID to get complete traces
+      traces/complete:
+        receivers:
+          - otlp/by-traceid
+        processors:
+          - memory_limiter
+          - groupbytrace
+        exporters:
+          - forward/complete_traces
+
+      # We can apply tail-based sampling to complete traces before exporting to Tempo.
+      traces/export_to_tempo:
+        receivers:
+          - forward/complete_traces
+        processors:
+          - tail_sampling/tempo_filter
+          - batch
+        exporters:
+          - otlphttp/tempo
+
+      # Servicegraph metrics also need the traces to be complete. We have to add the collector.hostname
+      # attribute to the generated metrics to avoid collision when different collector instances
+      # process spans between the same client/server pair.
+      traces/generate_servicegraph:
+        receivers:
+          - forward/complete_traces
+        exporters:
+          - servicegraph
+
+      metrics/from_servicegraph:
+        receivers:
+          - servicegraph
+        processors:
+          - attributes/collector_info
+          - batch
+        exporters:
+          - otlphttp/mimir
+
+      # Generate spanmetrics:
+      # Spans with the same 'service.name' are guaranteed to arrive at the same instance, meaning
+      # the spanmetrics generated for a single service will be generated by a single instance, avoiding
+      # the need to aggregate them later on.
+      traces/generate_spanmetrics:
+        receivers:
+          - otlp/by-service-name
+        processors:
+          - memory_limiter
+        exporters:
+          - spanmetrics
+
+      metrics/from_spanmetrics:
+        receivers:
+          - spanmetrics
+        processors:
+          - transform
+          - batch
+        exporters:
+          - otlphttp/mimir
+
+      # Metrics come from OTLP (i.e. from apps),
+      # some resource-level attributes are copied to datapoint-level attributes,
+      # then are sent to mimir.
+      metrics/from_apps:
+        receivers:
+          - otlp/by-service-name
+        processors:
+          - memory_limiter
+          - transform
+          - batch
+        exporters:
+          - otlphttp/mimir
+
+statefulset:
+  volumeClaimTemplates:
+    - metadata:
+        name: <PVC_NAME>
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: <CHOOSE_YOUR_STORAGE_CLASS>
+        resources:
+          requests:
+            storage: 5Gi
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                  - opentelemetry-collector
+          topologyKey: topology.kubernetes.io/zone
+        weight: 100
+
+priorityClassName: <CHOOSE_PRIORITY>
+
+extraVolumeMounts:
+  - name: <PVC_NAME>
+    mountPath: /pvc
+
+podSecurityContext:
+  fsGroup: 10001
+  runAsUser: 10001
+  runAsGroup: 10001
+
+presets:
+  kubernetesAttributes:
+    enabled: false
+  logsCollection:
+    enabled: false
+  hostMetrics:
+    enabled: false
+  kubernetesEvents:
+    enabled: false
+  clusterMetrics:
+    enabled: false
+  kubeletMetrics:
+    enabled: false
+
+prometheusRule:
+  enabled: true
+  defaultRules:
+    enabled: true
+
+serviceMonitor:
+  enabled: true
+
+# Make it a headless Service
+service:
+  type: ClusterIP
+  clusterIP: None
+
+ports:
+  metrics:
+    enabled: true
+  otlp4316:
+    enabled: true
+    containerPort: 4316
+    servicePort: 4316
+    hostPort: 4316
+    protocol: TCP
+    appProtocol: grpc
