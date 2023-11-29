@@ -245,7 +245,7 @@
             "uid": "${logs}"
           },
           "editorMode": "code",
-          "expr": "{app=~\"$app\", namespace=~\"$namespace\"} | json | line_format `{{.body}}` | json | trace_id=\"$traceId\" | line_format \"[{{.level}}] {{.message}}\"",
+          "expr": "{app=~\"$app\", namespace=~\"$namespace\"} | json | line_format `{{.body}}` | json | trace_id=~\"0*$traceId\" | line_format \"[{{.level}}] {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
